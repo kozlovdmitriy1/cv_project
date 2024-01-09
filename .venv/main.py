@@ -146,7 +146,7 @@ class WandProjectile(pygame.sprite.Sprite):
         pygame.sprite.Sprite.__init__(self)
         image_BGR = cv2.imread('sprites\\projectiles\\wand_projectile3.png')
         image_BGRA = cv2.cvtColor(image_BGR, cv2.COLOR_BGR2BGRA)
-        image_BGRA[:, :, 3] = -cv2.cvtColor(image_BGR, cv2.COLOR_BGR2HSV)[:, :, 2] + 255
+        image_BGRA[:, :, 3] = cv2.cvtColor(image_BGR, cv2.COLOR_BGR2HSV)[:, :, 2]
         self.image = pygame.image.frombuffer(image_BGRA.tobytes(), image_BGRA.shape[1::-1], "BGRA")
         self.rect = self.image.get_rect()
         self.rect.center = (x, y)
@@ -255,6 +255,8 @@ player_wand_arm = PlayerWandArm()
 all_sprites.add(player_wand_arm)
 show_video = False
 running = True
+x_wand_prev = 512
+y_wand_prev = 248
 while running:
     clock.tick(fps)
     results = None
@@ -309,6 +311,7 @@ while running:
         res_image = cv2.cvtColor(flippedRGB, cv2.COLOR_RGB2BGR)
         dim = (int(window_width / 4), int(window_height / 4))
         video.display(cv2.resize(res_image, dim, interpolation=cv2.INTER_AREA))
+
     if x_tip <= x_left_top:
         x_wand = player_body.rect.x + 59
     elif x_tip >= x_right_bottom:
@@ -321,8 +324,25 @@ while running:
         y_wand = player_body.rect.y + 75
     else:
         y_wand = int((y_tip - y_left_top) / (border * 7) * 120 + player_body.rect.y - 45)
+    wand_delta_x = abs(x_wand - x_wand_prev) + 1
+    wand_delta_y = y_wand - y_wand_prev + 1
+    sin = wand_delta_y / wand_delta_x
+    if sin >= 1:
+        wand_prjectile_gap_x = int(7 / abs(sin)) + 1
+    else:
+        wand_prjectile_gap_x = 7
+    if x_wand - x_wand_prev >= 0:
+        for i in range(int(wand_delta_x / wand_prjectile_gap_x)):
+            all_sprites.add(WandProjectile(x_wand_prev + i * wand_prjectile_gap_x,
+                                           y_wand_prev + wand_prjectile_gap_x * sin * i))
+        all_sprites.add(WandProjectile(x_wand, y_wand))
+    else:
+        for i in range(int(wand_delta_x / wand_prjectile_gap_x)):
+            all_sprites.add(WandProjectile(x_wand_prev - i * wand_prjectile_gap_x,
+                                           y_wand_prev + wand_prjectile_gap_x * sin * i))
     all_sprites.add(WandProjectile(x_wand, y_wand))
-    print(x_wand, y_wand)
+    x_wand_prev = x_wand
+    y_wand_prev = y_wand
     screen.fill(white)
     all_sprites.draw(screen)
     all_sprites.update()
