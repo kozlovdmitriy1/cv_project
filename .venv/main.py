@@ -19,8 +19,80 @@ pygame.display.set_caption("My Game")
 clock = pygame.time.Clock()
 
 
-def cvimage_to_pygame(image):
-    return pygame.image.frombuffer(image.tobytes(), image.shape[1::-1], "BGR")
+class Point:
+    def __init__(self, i1, i2=None, polar=False):
+        self.y = None
+        self.x = None
+        if isinstance(i1, Point):
+            self.x = i1.x
+            self.y = i1.y
+        if not polar:
+            self.x = i1
+            self.y = i2
+        else:
+            self.x = math.cos(i2) * i1
+            self.y = math.sin(i2) * i1
+
+    def __abs__(self):
+        return math.hypot(self.x, self.y)
+
+    def __str__(self):
+        return str((self.x, self.y))
+
+    def dist(self, p=None, y=None):
+        if p is None:
+            return abs(self)
+        if y is not None:
+            return math.hypot(abs(p - self.x), abs(y - self.y))
+        elif isinstance(p, Point):
+            return math.hypot(abs(p.x - self.x), abs(p.y - self.y))
+
+
+class Vector(Point):
+    def __init__(self, i1, i2=None, i3=None, i4=None):
+        if isinstance(i1, Vector):
+            super().__init__(i1.x, i1.y)
+        elif isinstance(i1, Point):
+            if isinstance(i2, Point):
+                super().__init__(i2.x - i1.x, i2.y - i1.y)
+            else:
+                super().__init__(i1.x, i1.y)
+        elif (isinstance(i1, int) or isinstance(i1, float)) and (isinstance(i2, int) or isinstance(i2, float)):
+            if (isinstance(i3, int) or isinstance(i3, float)) and (isinstance(i4, int) or isinstance(i4, float)):
+                super().__init__(i3 - i1, i4 - i2)
+            else:
+                super().__init__(i1, i2)
+
+    def length(self):
+        return math.hypot(self.x, self.y) + 1
+
+    def angle(self):
+        return math.acos(self.x / self.length())
+
+    def dot_product(self, v2):
+        return self.x * v2.x + self.y * v2.y
+
+    def __mul__(self, v2):
+        return self.x * v2.x + self.y * v2.y
+
+    def cross_product(self, v2):
+        return self.x * v2.y - self.y * v2.x
+
+    def __xor__(self, v2):
+        return self.x * v2.y - self.y * v2.x
+
+    def mul(self, n):
+        return Vector(self.x * n, self.y * n)
+
+    def __rmul__(self, n):
+        return Vector(self.x * n, self.y * n)
+
+
+def cvimage_to_pygame(image, BGRA=False):
+    if BGRA:
+        return pygame.image.frombuffer(image.tobytes(), image.shape[1::-1], "BGRA")
+    else:
+        return pygame.image.frombuffer(image.tobytes(), image.shape[1::-1], "BGR")
 
 
 all_sprites = pygame.sprite.Group()
@@ -141,23 +213,133 @@ class PlayerWandArm(pygame.sprite.Sprite):
         self.rect.y = player_body.rect.y - 45 + self.y_adjustment[(self.y_area - 1, self.x_area - 1)]
 
 
+wand_projectile_cv = cv2.imread('sprites\\projectiles\\wand_projectile3.png')
+
+
 class WandProjectile(pygame.sprite.Sprite):
     def __init__(self, x, y):
         pygame.sprite.Sprite.__init__(self)
-        image_BGR = cv2.imread('sprites\\projectiles\\wand_projectile3.png')
+        image_BGR = wand_projectile_cv.copy()
         image_BGRA = cv2.cvtColor(image_BGR, cv2.COLOR_BGR2BGRA)
         image_BGRA[:, :, 3] = cv2.cvtColor(image_BGR, cv2.COLOR_BGR2HSV)[:, :, 2]
-        self.image = pygame.image.frombuffer(image_BGRA.tobytes(), image_BGRA.shape[1::-1], "BGRA")
+        self.image = cvimage_to_pygame(image_BGRA, True)
         self.rect = self.image.get_rect()
         self.rect.center = (x, y)
         self.layer = 3
         self.lifetime = 30
+        self.in_line = False
 
     def update(self):
         self.lifetime -= 1
         self.image.set_alpha(int(self.lifetime / 30 * 255))
         if self.lifetime <= 0:
             self.kill()
+        if self.in_line:
+            image_BGR = wand_projectile_cv.copy()
+            ret, image_BGR[:, :, 2] = cv2.threshold(image_BGR[:, :, 2], 1, line_color[0], cv2.THRESH_BINARY)
+            ret, image_BGR[:, :, 1] = cv2.threshold(image_BGR[:, :, 1], 1, line_color[1], cv2.THRESH_BINARY)
+            ret, image_BGR[:, :, 0] = cv2.threshold(image_BGR[:, :, 0], 1, line_color[2], cv2.THRESH_BINARY)
+            image_BGRA = cv2.cvtColor(image_BGR, cv2.COLOR_BGR2BGRA)
+            image_BGRA[:, :, 3] = cv2.cvtColor(image_BGR, cv2.COLOR_BGR2HSV)[:, :, 2]
+            self.image = cvimage_to_pygame(image_BGRA, True)
+            if kill_line:
+                self.in_line = False
+                image_BGR = wand_projectile_cv.copy()
+                image_BGRA = cv2.cvtColor(image_BGR, cv2.COLOR_BGR2BGRA)
+                image_BGRA[:, :, 3] = cv2.cvtColor(image_BGR, cv2.COLOR_BGR2HSV)[:, :, 2]
+                self.image = cvimage_to_pygame(image_BGRA, True)
+
+
+class EnemyHealthSign(pygame.sprite.Sprite):
+    def __init__(self, type, parent, pos):
+        pygame.sprite.Sprite.__init__(self)
+        self.image = pygame.image.load('sprites\\enemies\\health_bar\\'
+                                       + ['vertical.png', 'horizontal.png', 'diagonal_upper.png',
+                                          'diagonal_lower.png', 'circle.png'][type])
+        self.image.set_colorkey((255, 255, 255))
+        self.rect = self.image.get_rect()
+        self.type = type
+        self.parent = parent
+        self.pos = pos
+
+    def update(self, *args, **kwargs):
+        self.rect.x = self.parent.rect.x + self.pos[0]
+        self.rect.y = self.parent.rect.y + self.pos[1]
+
+
+class AbstractEnemy(pygame.sprite.Sprite):
+    def __init__(self, speed, enemy_score, sign_types):
+        pygame.sprite.Sprite.__init__(self)
+        self.speed = speed
+        self.score = enemy_score
+        self.health = len(sign_types)
+        self.pos = random.randrange(4)
+        self.signs = []
+        global all_sprites
+        for i in range(len(sign_types)):
+            new_sign = EnemyHealthSign(sign_types[i], self, (18 * i, -20))
+            self.signs.append(new_sign)
+            all_sprites.add(new_sign)
+    def update(self):
+        if self.rect.x >= player_body.rect.x:
+            self.rect.x -= self.speed
+        else:
+            self.rect.x += self.speed
+        if self.rect.y >= player_body.rect.y:
+            self.rect.y -= self.speed
+        else:
+            self.rect.y += self.speed
+        if (pygame.Rect.colliderect(self.rect, player_body.rect) or
+            pygame.Rect.colliderect(self.rect, player_wand_arm.rect)):
+            global health, score
+            hearts[lives - health].die()
+            health -= 1
+            for sign in self.signs:
+                sign.kill()
+            self.kill()
+        if line_status == self.signs[-1].type:
+            self.signs[-1].kill()
+            del self.signs[-1]
+            self.health -= 1
+            if self.health == 0:
+                score += self.score
+                self.kill()
+
+
+class Ghost1(AbstractEnemy):
+    def __init__(self, sign_types):
+        AbstractEnemy.__init__(self, 5, 150, sign_types)
+        self.image = pygame.image.load('sprites\\enemies\\enemies\\ghost1.jpg')
+        self.image.set_colorkey((255, 255, 255))
+        self.rect = self.image.get_rect()
+        pos = random.randrange(3)
+        if pos == 0:
+            self.rect.x = -120
+            self.rect.y = random.randrange(window_height)
+        elif pos == 1:
+            self.rect.x = window_width + 120
+            self.rect.y = random.randrange(window_width)
+        elif pos == 2:
+            self.rect.y = window_height + 150
+            self.rect.x = random.randrange(window_width)
+
+
+class Heart(pygame.sprite.Sprite):
+    def __init__(self, x, y):
+        pygame.sprite.Sprite.__init__(self)
+        self.image = cv2.imread('sprites\\interface\\heart_full.jpg')
+        dim = (int(self.image.shape[1] * 0.5), int(self.image.shape[0] * 0.5))
+        self.image = cvimage_to_pygame(cv2.resize(self.image, dim, interpolation=cv2.INTER_AREA))
+        self.image.set_colorkey((255, 255, 255))
+        self.rect = self.image.get_rect()
+        self.rect.center = (x, y)
+        self.layer = 1
+
+    def die(self):
+        self.image = cv2.imread('sprites\\interface\\heart_dead.jpg')
+        dim = (int(self.image.shape[1] * 0.5), int(self.image.shape[0] * 0.5))
+        self.image = cvimage_to_pygame(cv2.resize(self.image, dim, interpolation=cv2.INTER_AREA))
+        self.image.set_colorkey((255, 255, 255))
 
 
 class Video(pygame.sprite.Sprite):
@@ -255,11 +437,29 @@ player_wand_arm = PlayerWandArm()
 all_sprites.add(player_wand_arm)
 show_video = False
 running = True
-x_wand_prev = 512
-y_wand_prev = 248
+wand_pos_prev = Point(512, 248)
+wand_vector_prev = Vector(wand_pos_prev, wand_pos_prev)
+wand_projectiles_prev = []
+new_projectile = WandProjectile(512, 248)
+sin_prev = 0
+wand_delta_x_prev_positive = True
+line_color = (0, 0, 0)
+kill_line = False
+mouse_control = False
+results = None
+level = 0
+score = 0
+lives = 5
+health = lives
+hearts = []
+line_length = 0
+horizon = Vector(1, 1, 100, 1)
+for i in range(lives):
+    new_heart = Heart(770 - 70 * i, 30)
+    hearts.append(new_heart)
+    all_sprites.add(new_heart)
 while running:
     clock.tick(fps)
-    results = None
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
@@ -293,6 +493,16 @@ while running:
                 print(x_left_top, y_left_top)
                 print(x_right_bottom, y_right_bottom)
                 print(frame.shape[1], frame.shape[0])
+            elif event.key == pygame.K_m:
+                if mouse_control:
+                    mouse_control = False
+                else:
+                    mouse_control = True
+            elif event.key == pygame.K_t:
+                kill_line = True
+                all_sprites.update()
+                pygame.display.flip()
+
 
     ret, frame = cap.read()
     flipped = np.fliplr(frame)
@@ -312,39 +522,105 @@ while running:
         dim = (int(window_width / 4), int(window_height / 4))
         video.display(cv2.resize(res_image, dim, interpolation=cv2.INTER_AREA))
 
+
+    kill_line = False
+    line_status = -1
+    new_wand_projectiles = []
+    wand_pos = Point(0, 0)
     if x_tip <= x_left_top:
-        x_wand = player_body.rect.x + 59
+        wand_pos.x = player_body.rect.x + 59
     elif x_tip >= x_right_bottom:
-        x_wand = player_body.rect.x + 179
+        wand_pos.x = player_body.rect.x + 179
     else:
-        x_wand = int((x_tip - x_left_top) / (border * 7) * 120 + player_body.rect.x + 59)
+        wand_pos.x = int((x_tip - x_left_top) / (border * 7) * 120 + player_body.rect.x + 59)
     if y_tip <= y_left_top:
-        y_wand = player_body.rect.y - 45
+        wand_pos.y = player_body.rect.y - 45
     elif y_tip >= y_right_bottom:
-        y_wand = player_body.rect.y + 75
+        wand_pos.y = player_body.rect.y + 75
     else:
-        y_wand = int((y_tip - y_left_top) / (border * 7) * 120 + player_body.rect.y - 45)
-    wand_delta_x = abs(x_wand - x_wand_prev) + 1
-    wand_delta_y = y_wand - y_wand_prev + 1
-    sin = wand_delta_y / wand_delta_x
+        wand_pos.y = int((y_tip - y_left_top) / (border * 7) * 120 + player_body.rect.y - 45)
+    if mouse_control:
+        wand_pos.x = pygame.mouse.get_pos()[0]
+        wand_pos.y = pygame.mouse.get_pos()[1]
+    wand_delta_x = abs(wand_pos.x - wand_pos_prev.x) + 1
+    wand_delta_y = wand_pos.y - wand_pos_prev.y + 1
+    sin = wand_delta_y / wand_delta_x + 0.01
+    wand_vector = Vector(wand_pos_prev, wand_pos)
     if sin >= 1:
-        wand_prjectile_gap_x = int(7 / abs(sin)) + 1
+        wand_projectile_gap_x = int(7 / abs(sin)) + 1
     else:
-        wand_prjectile_gap_x = 7
-    if x_wand - x_wand_prev >= 0:
-        for i in range(int(wand_delta_x / wand_prjectile_gap_x)):
-            all_sprites.add(WandProjectile(x_wand_prev + i * wand_prjectile_gap_x,
-                                           y_wand_prev + wand_prjectile_gap_x * sin * i))
-        all_sprites.add(WandProjectile(x_wand, y_wand))
+        wand_projectile_gap_x = 7
+    if wand_pos.x - wand_pos_prev.x >= 0:
+        for i in range(int(wand_delta_x / wand_projectile_gap_x)):
+            new_projectile = WandProjectile(wand_pos_prev.x + i * wand_projectile_gap_x,
+                                           wand_pos_prev.y + wand_projectile_gap_x * sin * i)
+            all_sprites.add(new_projectile)
+            new_wand_projectiles.append(new_projectile)
     else:
-        for i in range(int(wand_delta_x / wand_prjectile_gap_x)):
-            all_sprites.add(WandProjectile(x_wand_prev - i * wand_prjectile_gap_x,
-                                           y_wand_prev + wand_prjectile_gap_x * sin * i))
-    all_sprites.add(WandProjectile(x_wand, y_wand))
-    x_wand_prev = x_wand
-    y_wand_prev = y_wand
+        for i in range(int(wand_delta_x / wand_projectile_gap_x)):
+            new_projectile = WandProjectile(wand_pos_prev.x - i * wand_projectile_gap_x,
+                                           wand_pos_prev.y + wand_projectile_gap_x * sin * i)
+            all_sprites.add(new_projectile)
+            new_wand_projectiles.append(new_projectile)
+    new_projectile = WandProjectile(wand_pos.x, wand_pos.y)
+    all_sprites.add(new_projectile)
+    new_wand_projectiles.append(new_projectile)
+    if (((wand_pos.x - wand_pos_prev.x) >= 0) == wand_delta_x_prev_positive and
+            math.acos(wand_vector * wand_vector_prev / (wand_vector.length() * wand_vector_prev.length()))) < 0.5:
+        for element in new_wand_projectiles:
+            element.in_line = True
+            line_length += 1
+            if (wand_vector * horizon) / (wand_vector.length() * horizon.length()) * 57 < 30:
+                if line_length < 10:
+                    line_color = (0, 0, 20 * line_length)
+                else:
+                    line_color = (0, 0, 200)
+                    line_status = 0
+            elif abs((wand_vector * horizon) / (wand_vector.length() * horizon.length()) * 57 - 90) < 30:
+                if line_length < 10:
+                    line_color = (20 * line_length, 0, 0)
+                else:
+                    line_color = (200, 0, 0)
+                    line_status = 1
+        for element in wand_projectiles_prev:
+            element.in_line = True
+            line_length += 1
+            if math.acos((wand_vector * horizon) / (wand_vector.length() * horizon.length())) * 57 < 30:
+                if line_length < 10:
+                    line_color = (0, 0, 20 * line_length)
+                else:
+                    line_color = (0, 0, 200)
+                    line_status = 0
+            elif abs(math.acos((wand_vector * horizon) / (wand_vector.length() * horizon.length())) * 57 - 90) < 30:
+                if line_length < 10:
+                    line_color = (20 * line_length, 0, 0)
+                else:
+                    line_color = (200, 0, 0)
+                    line_status = 1
+    else:
+        kill_line = True
+        line_length = 0
+    if wand_pos.x - wand_pos_prev.x >= 0:
+        wand_delta_x_prev_positive = True
+    else:
+        wand_delta_x_prev_positive = False
+    wand_pos_prev = wand_pos
+    sin_prev = sin
+    wand_vector_prev = wand_vector
+    wand_projectiles_prev = new_wand_projectiles
+
+
+    if random.randrange(100) == 99:
+        all_sprites.add(Ghost1([random.randrange(2) for _ in range(4)]))
+    if health <= 0:
+        print('Game Over')
+        print('Your score:', score)
+        break
+
+
     screen.fill(white)
     all_sprites.draw(screen)
     all_sprites.update()
     pygame.display.flip()
 pygame.quit()
+print('Your score:', score)
