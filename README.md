@@ -4,4 +4,4 @@ Draw the last symbol of the enemy's healthbar to deal damage to it. Make sure th
 Press 'C' to switch the camera.
 Press 'V' to show/hide the camera footage.
 Press space to reset the hand position and the area for drawing.
-To run this project successfully you'll need python 3.10 with pygame, numpy, opencv-python and mediapipe installed
+To run this project successfully you'll need python 3.10 with pygame, numpy, opencv-python, mediapipe and msvc-runtime packages installed
