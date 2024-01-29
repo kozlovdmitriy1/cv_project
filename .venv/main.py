@@ -115,13 +115,13 @@ class PlayerBody(pygame.sprite.Sprite):  # static parts of the player
     def update(self, *args, **kwargs): # movement control
         keystate = pygame.key.get_pressed()
         if keystate[pygame.K_a] and self.rect.left >= 3:
-            self.rect.x -= window_width / 210
+            self.rect.x -= 3
         if keystate[pygame.K_d] and self.rect.right <= 917:
-            self.rect.x += window_width / 210
+            self.rect.x += 3
         if keystate[pygame.K_w] and self.rect.top >= 3:
-            self.rect.y -= window_width / 210
+            self.rect.y -= 3
         if keystate[pygame.K_s] and self.rect.bottom <= 647:
-            self.rect.y += window_width / 210
+            self.rect.y += 3
 
 
 class PlayerWandArm(pygame.sprite.Sprite):  # the left arm of the player
@@ -320,7 +320,7 @@ class AbstractEnemy(pygame.sprite.Sprite):  # a parent class for all enemies
 
 class Ghost1(AbstractEnemy):  # a big and slow ghost
     def __init__(self, sign_types):
-        AbstractEnemy.__init__(self, 5, 150, sign_types)
+        AbstractEnemy.__init__(self, 2, 150, sign_types)
         self.image = pygame.image.load('sprites\\enemies\\enemies\\ghost1.jpg')
         self.image.set_colorkey((255, 255, 255))
         self.rect = self.image.get_rect()
@@ -338,7 +338,7 @@ class Ghost1(AbstractEnemy):  # a big and slow ghost
 
 class Ghost2(AbstractEnemy): # a small and fast ghost
     def __init__(self, sign_types):
-        AbstractEnemy.__init__(self, 15, 100, sign_types)
+        AbstractEnemy.__init__(self, 7, 100, sign_types)
         self.image = pygame.image.load('sprites\\enemies\\enemies\\ghost2.png')
         self.image.set_colorkey((255, 255, 255))
         self.rect = self.image.get_rect()
